@@ -38,10 +38,11 @@ class PandocConvertCommand extends ContainerAwareCommand {
         $this
             ->setName('pandoc:convert')
             ->setDescription('Convert Wiki Git to MediaWiki')
+            ->addOption('wiki', 'w', InputOption::VALUE_REQUIRED, 'path/to/wiki/directory', false)
             ->addOption('input', 'i', InputOption::VALUE_OPTIONAL, 'fichier à convertir')
             ->addOption('output', 'o', InputOption::VALUE_OPTIONAL, 'fichier converti')
             ->addOption('format', 'f', InputOption::VALUE_OPTIONAL, 'format de conversion', SELF::FORMAT_MD2MW)
-            ->addOption('wiki', 'w', InputOption::VALUE_REQUIRED, 'path/to/wiki/directory');;
+            ;
     }
 
     /**
@@ -52,7 +53,7 @@ class PandocConvertCommand extends ContainerAwareCommand {
         $this->input = $input;
         $this->output = $output;
         $this->question = $this->getHelper('question');
-        $proc = new Process('pandoc');
+
         $fs = new Filesystem();
         $finder = new Finder();
 
@@ -60,6 +61,9 @@ class PandocConvertCommand extends ContainerAwareCommand {
         $fileOut = $input->getOption('output');
         $format = $input->getOption('format');
         $wikiDir = $input->getOption('wiki');
+        if($wikiDir === false) {
+            return $this->error("wiki directory not specified");
+        }
 
         if (!$fs->exists($wikiDir)) {
             $output->writeln("wiki directory not exist at $wikiDir");
@@ -73,6 +77,8 @@ class PandocConvertCommand extends ContainerAwareCommand {
             if ($this->question->ask($input, $output, $q)) {
                 $fs->mkdir("$wikiDir/markdown");
                 $this->info("markdown directory created");
+            } else {
+                return $this->error("markdown directory needed");
             }
         }
         //check if mediawiki dir exist
@@ -82,6 +88,8 @@ class PandocConvertCommand extends ContainerAwareCommand {
             if ($this->question->ask($input, $output, $q)) {
                 $fs->mkdir("$wikiDir/mediawiki");
                 $this->info("mediawiki directory created");
+            } else {
+                return $this->error("mediawiki directory needed");
             }
         }
 
@@ -91,7 +99,7 @@ class PandocConvertCommand extends ContainerAwareCommand {
         if ($fileIn !== null) {
             $file = $finder->in($wikiDir)->files()->name($fileIn);
             dump($file);die('ok');
-            $this->convert($file, $fileOut, $format);
+            $this->convert($wikiDir, $file, $format);
         } else {
             $files = [];
             foreach ($finder->in($wikiDir)->files()->sortByName() as $file) {
@@ -111,7 +119,7 @@ class PandocConvertCommand extends ContainerAwareCommand {
                 $files2Convert = $files;
 
             }
-//            $this->convert($wikiDir, $files2Convert, )
+            $this->convert($wikiDir, $files2Convert, $format);
         }
 
 
@@ -119,13 +127,46 @@ class PandocConvertCommand extends ContainerAwareCommand {
     }
 
     /**
-     * @param $file
-     * @param $fileOut
-     * @param $format
+     * Convert with Pandoc
+     *
+     * @param string $wikiDir
+     * @param array $files to convert
+     * @param string $format
      */
-    private function convert($file, $fileOut, $format) {
+    private function convert($wikiDir, $files, $format) {
+//        dump($wikiDir);
+//        dump($files);
+//        dump($format);
+
+        switch ($format) {
+            case self::FORMAT_MD2MW:
+                foreach ($files as $file) {
+
+                    $fileIn = "$wikiDir/markdown/$file";
+                    $fileOut = "$wikiDir/mediawiki/" . preg_replace("#\.md$#",".mw", $file);
+                    $this->md2mw($fileIn, $fileOut);
+                }
+
+                break;
+            default:
+                return $this->error("format $format not expected");
+                break;
+        }
 
     }
+
+    private function md2mw($fileIn, $fileOut) {
+//dump($fileIn);
+//dump($fileOut);
+        $cmd = "pandoc $fileIn -f markdown-yaml_metadata_block -t mediawiki -o $fileOut";
+        $proc = new Process($cmd);
+        $proc->run();
+        return true;
+//    #delete tag  <a>
+//    sed -i 's/<a.*\/a>//g' "$mw"
+    }
+
+
 
     private function error($msg) {
         $this->output->writeln($msg);
